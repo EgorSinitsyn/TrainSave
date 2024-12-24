@@ -1,0 +1,7 @@
+Flask==2.3.2                 # Основной фреймворк для сервера
+flask-mysql-connector==1.0.7 # Для работы Flask с MySQL
+mysql-connector-python==8.1.0 # Работа с MySQL через Python
+python-dotenv==1.0.0         # Для работы с переменными окружения
+requests==2.31.0             # Для отправки HTTP-запросов (используется в client.py)
+tkintertable==1.3.2          # Для GUI (если нужен интерфейс на Tkinter)
+pymysql==1.1.1               # Альтернативная библиотека для MySQL (если используется)
