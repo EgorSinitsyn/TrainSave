@@ -4,6 +4,7 @@ from mysql.connector import Error
 from dotenv import load_dotenv
 import os
 import ipaddress
+from two_factor_module import generate_2fa_code, validate_2fa_code
 
 # Загрузка переменных окружения из .env файла
 load_dotenv()
@@ -60,15 +61,20 @@ def login():
     if conn:
         try:
             cursor = conn.cursor()
-            query = "SELECT role FROM users WHERE username = %s AND password = %s;"
+            query = "SELECT id, role FROM users WHERE username = %s AND password = %s;"
             cursor.execute(query, (username, password))
             result = cursor.fetchone()
 
             # Если результат найден
             if result:
-                # Очистка остальных данных
-                cursor.fetchall()  # Это удаляет все невычитанные результаты
-                return jsonify({"message": "Login successful", "role": result[0]}), 200
+                user_id, role = result
+                # Генерация 2FA-кода для пользователя
+                code = generate_2fa_code(user_id)
+                return jsonify({
+                    "message": "Login successful. 2FA code generated.",
+                    "role": role,
+                    "user_id": user_id
+                }), 200
             else:
                 return jsonify({"message": "Invalid username or password"}), 401
         except Error as e:
@@ -80,6 +86,22 @@ def login():
             conn.close()
     else:
         return jsonify({"message": "Failed to connect to the database"}), 500
+
+@app.route('/validate_2fa', methods=['POST'])
+def validate_2fa():
+    """Эндпоинт для проверки 2FA-кода."""
+    data = request.json
+    user_id = data.get("user_id")
+    input_code = data.get("code")
+
+    if not user_id or not input_code:
+        return jsonify({"message": "User ID and code are required"}), 400
+
+    is_valid, message = validate_2fa_code(user_id, input_code)
+    if is_valid:
+        return jsonify({"message": "2FA validation successful"}), 200
+    else:
+        return jsonify({"message": message}), 401
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=6000, debug=True)
