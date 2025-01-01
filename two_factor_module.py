@@ -1,120 +1,128 @@
+# two_factor_service.py
+from flask import Flask, request, jsonify
 import random
 import mysql.connector
 from mysql.connector import Error
 from dotenv import load_dotenv
 import os
 from datetime import datetime, timedelta
-# from twilio.rest import Client  # Установите Twilio, если планируете отправлять SMS
 
-# Загружаем переменные окружения из .env файла
+# Загружаем переменные окружения из .env
 load_dotenv()
 
+# Конфигурация базы данных
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST"),
+    "port": os.getenv("DB_PORT"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "database": "TrainSafe"
+}
+
+app = Flask(__name__)
+
 def get_db_connection():
-    """Подключение к MySQL."""
+    """Подключение к базе данных."""
     try:
-        conn = mysql.connector.connect(
-            host=os.getenv("DB_HOST"),
-            port=os.getenv("DB_PORT"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            database="TrainSafe"
-        )
+        conn = mysql.connector.connect(**DB_CONFIG)
         if conn.is_connected():
             return conn
     except Error as e:
-        print(f"Ошибка подключения к MySQL: {e}")
-        return None
+        print(f"Ошибка подключения к базе данных: {e}")
+    return None
 
-def generate_2fa_code(user_id):
-    """Генерация 2FA-кода и сохранение в таблицу."""
+@app.route('/generate_2fa', methods=['POST'])
+def generate_2fa():
+    """
+    Генерация 2FA-кода и сохранение в базе.
+    Принимает JSON с полем user_id.
+    """
+    data = request.json
+    user_id = data.get("user_id")
+    if not user_id:
+        return jsonify({"message": "User ID is required"}), 400
+
     conn = get_db_connection()
-    if conn:
-        try:
-            cursor = conn.cursor()
-            code = f"{random.randint(100000, 999999)}"
-            expires_at = datetime.now() + timedelta(minutes=5)  # Код действует 5 минут
+    if not conn:
+        return jsonify({"message": "Failed to connect to the database"}), 500
 
-            # Сохранение кода в таблицу
-            insert_query = '''
-                INSERT INTO two_factor_codes (user_id, code, expires_at)
-                VALUES (%s, %s, %s);
-            '''
-            cursor.execute(insert_query, (user_id, code, expires_at))
-            conn.commit()
+    try:
+        cursor = conn.cursor()
+        code = f"{random.randint(100000, 999999)}"
+        expires_at = datetime.now() + timedelta(minutes=5)  # Код действует 5 минут
 
-            # Получение номера телефона пользователя
-            cursor.execute("SELECT phone_number FROM users WHERE id = %s;", (user_id,))
-            phone_number = cursor.fetchone()[0]
+        # Запись кода в таблицу two_factor_codes
+        insert_query = '''
+            INSERT INTO two_factor_codes (user_id, code, expires_at)
+            VALUES (%s, %s, %s);
+        '''
+        cursor.execute(insert_query, (user_id, code, expires_at))
+        conn.commit()
 
-            print(f"Сгенерирован 2FA-код: {code} для пользователя {user_id}. Телефон: {phone_number}")
+        # Дополнительно можно получить телефон пользователя (если нужно отправлять SMS):
+        # cursor.execute("SELECT phone_number FROM users WHERE id = %s;", (user_id,))
+        # phone_number = cursor.fetchone()[0]
+        # send_sms(phone_number, code)  # Реализовать при необходимости
 
-            # Отправка SMS (реализуйте с Twilio или другим API)
-            # send_sms(phone_number, code)
+        return jsonify({"message": "2FA code generated", "code": code}), 200
+    except Error as e:
+        return jsonify({"message": f"Database error: {e}"}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
-            return code
-        except Error as e:
-            print(f"Ошибка при генерации 2FA-кода: {e}")
-        finally:
-            cursor.close()
-            conn.close()
+@app.route('/validate_2fa', methods=['POST'])
+def validate_2fa():
+    """
+    Проверка 2FA-кода.
+    Принимает JSON с полями user_id и code.
+    """
+    data = request.json
+    user_id = data.get("user_id")
+    input_code = data.get("code")
 
-def validate_2fa_code(user_id, input_code):
-    """Проверка 2FA-кода."""
+    if not user_id or not input_code:
+        return jsonify({"message": "User ID and code are required"}), 400
+
     conn = get_db_connection()
-    if conn:
-        try:
-            cursor = conn.cursor()
+    if not conn:
+        return jsonify({"message": "Failed to connect to the database"}), 500
 
-            # Проверяем код
-            query = '''
-                SELECT code, expires_at 
-                FROM two_factor_codes
-                WHERE user_id = %s
-                ORDER BY expires_at DESC 
-                LIMIT 1;
-            '''
-            cursor.execute(query, (user_id,))
-            result = cursor.fetchone()
+    try:
+        cursor = conn.cursor()
+        query = '''
+            SELECT code, expires_at
+            FROM two_factor_codes
+            WHERE user_id = %s
+            ORDER BY expires_at DESC
+            LIMIT 1;
+        '''
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
 
-            if not result:
-                return False, "Неверный код."
+        if not result:
+            return jsonify({"message": "Invalid code"}), 401
 
-            code, expires_at = result
+        code, expires_at = result
 
-            # Проверка на истечение срока действия
-            if datetime.now() > expires_at:
-                return False, "Код истёк."
+        if datetime.now() > expires_at:
+            return jsonify({"message": "Code expired"}), 401
 
-            if code != input_code:
-                return False, "Неверный код."
+        if code != input_code:
+            return jsonify({"message": "Invalid code"}), 401
 
-            # Удаление использованного кода
-            delete_query = "DELETE FROM two_factor_codes WHERE user_id = %s;"
-            cursor.execute(delete_query, (user_id,))
-            conn.commit()
+        # Удаляем использованный код
+        delete_query = "DELETE FROM two_factor_codes WHERE user_id = %s;"
+        cursor.execute(delete_query, (user_id,))
+        conn.commit()
 
-            return True, "Код успешно подтверждён."
-        except Error as e:
-            print(f"Ошибка при проверке 2FA-кода: {e}")
-            return False, "Ошибка системы."
-        finally:
-            if cursor:
-                cursor.close()
-            conn.close()
-    else:
-        return False, "Ошибка подключения к базе данных."
+        return jsonify({"message": "2FA validated"}), 200
+    except Error as e:
+        return jsonify({"message": f"Database error: {e}"}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
-# Реализация функции отправки SMS
-# def send_sms(phone_number, code):
-#     """Отправка SMS с помощью Twilio."""
-#     account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-#     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-#     from_number = os.getenv("TWILIO_PHONE_NUMBER")
-#
-#     client = Client(account_sid, auth_token)
-#     message = client.messages.create(
-#         body=f"Ваш одноразовый код: {code}",
-#         from_=from_number,
-#         to=phone_number
-#     )
-#     print(f"SMS отправлено на номер {phone_number}: {message.sid}")
+# Если запускаете отдельно:
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=6001, debug=True)
