@@ -1,4 +1,3 @@
-# two_factor_service.py
 from flask import Flask, request, jsonify
 import random
 import mysql.connector
@@ -90,35 +89,53 @@ def validate_2fa():
 
     try:
         cursor = conn.cursor()
-        query = '''
-            SELECT code, expires_at
-            FROM two_factor_codes
-            WHERE user_id = %s
-            ORDER BY expires_at DESC
-            LIMIT 1;
-        '''
-        cursor.execute(query, (user_id,))
-        result = cursor.fetchone()
-
-        if not result:
+        # Берём последнюю запись
+        cursor.execute('''
+                SELECT id, code, expires_at, is_validated
+                FROM two_factor_codes
+                WHERE user_id = %s
+                ORDER BY expires_at DESC
+                LIMIT 1
+            ''', (user_id,))
+        row = cursor.fetchone()
+        if not row:
             return jsonify({"message": "Invalid code"}), 401
 
-        code, expires_at = result
+        record_id, db_code, db_expires, db_is_validated = row
 
-        if datetime.now() > expires_at:
+        # Проверка свежести
+        if db_is_validated:
+            return jsonify({"message": "Code already used"}), 401
+        if datetime.now() > db_expires:
             return jsonify({"message": "Code expired"}), 401
-
-        if code != input_code:
+        if db_code != input_code:
             return jsonify({"message": "Invalid code"}), 401
 
-        # Удаляем использованный код
-        delete_query = "DELETE FROM two_factor_codes WHERE user_id = %s;"
-        cursor.execute(delete_query, (user_id,))
-        conn.commit()
+            # ОК, код подтверждён
+            session_expires = datetime.now() + timedelta(minutes=30)  # или больше
 
-        return jsonify({"message": "2FA validated"}), 200
-    except Error as e:
-        return jsonify({"message": f"Database error: {e}"}), 500
+            update_query = '''
+                    UPDATE two_factor_codes
+                    SET is_validated = TRUE,
+                        is_session_active = TRUE,
+                        session_expires_at = %s
+                    WHERE id = %s
+                '''
+            cursor.execute(update_query, (session_expires, record_id))
+            conn.commit()
+
+            # Получим роль пользователя
+            cursor.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+            role = cursor.fetchone()[0]
+
+            return jsonify({
+                "message": "2FA validated",
+                "user_id": user_id,
+                "role": role,
+                "session_expires": session_expires.isoformat(),
+                # Клиенту можно вернуть code как "session_token"
+                "session_token": input_code
+            }), 200
     finally:
         cursor.close()
         conn.close()
