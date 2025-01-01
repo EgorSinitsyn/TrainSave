@@ -1,23 +1,34 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, scrolledtext
 import requests
 
-# URL микросервиса авторизации
+# URL для сервисов
 AUTH_URL = "http://127.0.0.1:6000/login"
 VERIFY_2FA_URL = "http://127.0.0.1:6000/validate_2fa"
+EXECUTE_URL = "http://127.0.0.1:6000/execute"
+
+# Глобальные переменные для хранения данных пользователя
+global_user_id = None
+global_role = None
+entered_2fa_code = None
 
 def login():
     username = username_entry.get()
     password = password_entry.get()
 
-    # Отправка запроса на сервер
+    # Отправка запроса на сервер (/login)
     response = requests.post(AUTH_URL, json={"username": username, "password": password})
 
-    # Обработка ответа
     if response.status_code == 200:
         data = response.json()
         user_id = data.get("user_id")
         role = data.get("role")
+
+        # Сохраняем данные пользователя
+        global global_user_id, global_role
+        global_user_id = user_id
+        global_role = role
+
         messagebox.showinfo("Success", f"Login successful! Role: {role}")
         show_2fa_prompt(user_id)
     elif response.status_code == 401:
@@ -25,25 +36,27 @@ def login():
     elif response.status_code == 403:
         messagebox.showerror("Error", "Access denied: Invalid IP address!")
     else:
-        messagebox.showerror("Error", "Unexpected error occurred!")
+        messagebox.showerror("Error", f"Unexpected error occurred! (HTTP {response.status_code})")
 
 def verify_2fa(user_id):
-    code = twofa_entry.get()
+    global entered_2fa_code
 
-    # Отправка запроса на сервер для проверки 2FA
+    code = twofa_entry.get()
+    entered_2fa_code = code
+
+    # Отправка запроса на сервер (/validate_2fa)
     response = requests.post(VERIFY_2FA_URL, json={"user_id": user_id, "code": code})
 
-    # Обработка ответа
     if response.status_code == 200:
         messagebox.showinfo("Success", "2FA verified successfully!")
         twofa_window.destroy()
+        open_sql_window()  # Открываем окно для отправки SQL-запросов
     else:
-        messagebox.showerror("Error", "Invalid 2FA code!")
+        messagebox.showerror("Error", "Invalid or expired 2FA code!")
 
 def show_2fa_prompt(user_id):
     global twofa_window, twofa_entry
 
-    # Создание нового окна для ввода 2FA
     twofa_window = tk.Toplevel(root)
     twofa_window.title("2FA Verification")
 
@@ -52,6 +65,67 @@ def show_2fa_prompt(user_id):
     twofa_entry.pack(padx=10, pady=10)
 
     tk.Button(twofa_window, text="Verify", command=lambda: verify_2fa(user_id)).pack(pady=10)
+
+def open_sql_window():
+    """
+    Окно для ввода SQL-запросов и их выполнения.
+    """
+    sql_window = tk.Toplevel(root)
+    sql_window.title("SQL Console")
+
+    tk.Label(sql_window, text=f"Logged in as role: {global_role}, user_id: {global_user_id}").pack(pady=5)
+
+    query_label = tk.Label(sql_window, text="Enter SQL query:")
+    query_label.pack()
+
+    query_text = scrolledtext.ScrolledText(sql_window, width=60, height=5)
+    query_text.pack(padx=10, pady=10)
+
+    def execute_query():
+        query = query_text.get("1.0", tk.END).strip()
+        if not query:
+            messagebox.showwarning("Warning", "SQL query is empty!")
+            return
+
+        payload = {
+            "user_id": global_user_id,
+            "role": global_role,
+            "code": entered_2fa_code,
+            "query": query
+        }
+
+        try:
+            resp = requests.post(EXECUTE_URL, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                if "result" in data:
+                    show_select_result(data["result"])
+                else:
+                    messagebox.showinfo("Info", data.get("message", "Query executed successfully"))
+            else:
+                err = resp.json()
+                messagebox.showerror("Error", f"HTTP {resp.status_code}: {err.get('message', resp.text)}")
+        except requests.RequestException as e:
+            messagebox.showerror("Network Error", str(e))
+
+    def show_select_result(rows):
+        """
+        Отобразить результат запроса (список словарей) в новом окне.
+        """
+        result_window = tk.Toplevel(sql_window)
+        result_window.title("Query Result")
+
+        text_area = scrolledtext.ScrolledText(result_window, width=80, height=20)
+        text_area.pack(padx=10, pady=10)
+
+        for row in rows:
+            text_area.insert(tk.END, f"{row}\n")
+        text_area.config(state=tk.DISABLED)
+
+    execute_button = tk.Button(sql_window, text="Execute", command=execute_query)
+    execute_button.pack(pady=5)
+
+    sql_window.focus()
 
 # Создание основного окна приложения
 root = tk.Tk()
