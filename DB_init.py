@@ -22,6 +22,7 @@ def get_db_connection():
         print(f"Ошибка подключения к MySQL: {e}")
         return None
 
+
 def import_csv_to_table(conn, csv_file_path):
     """Импорт данных из CSV в таблицу train_data с обработкой ошибок"""
     if not os.path.exists(csv_file_path):
@@ -36,7 +37,7 @@ def import_csv_to_table(conn, csv_file_path):
             for row_number, row in enumerate(reader, start=2):  # Нумерация строк CSV начинается с 2 (1-я строка - заголовок)
                 try:
                     insert_query = '''
-                        INSERT INTO train_data (
+                        INSERT IGNORE INTO train_data (
                             Loan_ID, Customer_ID, Loan_Status, Current_Loan_Amount, Term,
                             Credit_Score, Annual_Income, Years_in_current_job, Home_Ownership, Purpose,
                             Monthly_Debt, Years_of_Credit_History, Months_since_last_delinquent,
@@ -98,6 +99,9 @@ def init_database():
                     user_id INT NOT NULL,
                     code VARCHAR(6) NOT NULL,
                     expires_at DATETIME NOT NULL,
+                    is_validated BOOLEAN DEFAULT FALSE,
+                    session_expires_at DATETIME NULL,
+                    is_session_active BOOLEAN DEFAULT FALSE,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
             ''')
@@ -125,14 +129,14 @@ def init_database():
                                 Loan_Status ENUM('Approved', 'Rejected', 'Fully Paid') NOT NULL,
                                 Current_Loan_Amount DECIMAL(10,2),
                                 Term VARCHAR(10),
-                                Credit_Score SMALLINT,
+                                Credit_Score INT NULL,
                                 Annual_Income FLOAT,
                                 Years_in_current_job VARCHAR(50),
                                 Home_Ownership ENUM('Rent', 'Mortgage', 'Own', 'Other'),
                                 Purpose VARCHAR(255),
                                 Monthly_Debt FLOAT,
                                 Years_of_Credit_History FLOAT,
-                                Months_since_last_delinquent INT,
+                                Months_since_last_delinquent INT NULL,
                                 Number_of_Open_Accounts TINYINT,
                                 Number_of_Credit_Problems TINYINT,
                                 Current_Credit_Balance DECIMAL(15,2),
