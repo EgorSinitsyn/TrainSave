@@ -81,44 +81,51 @@ class EditorHandler(Handler):
                     return False, f"Editor cannot execute: {pattern}"
 
             # Разрешаем операции только над train_data
-            # Ищем упоминания таблиц в FROM/JOIN/INTO/UPDATE
+            # Ищем упоминания таблиц в FROM, JOIN, INTO, UPDATE
             table_names = re.findall(
-                r'\bFROM\s+(\S+)|\bJOIN\s+(\S+)|\bINTO\s+(\S+)|\bUPDATE\s+(\S+)',
+                r'\bFROM\s+([\w`"]+)|\bJOIN\s+([\w`"]+)|\bINTO\s+([\w`"]+)|\bUPDATE\s+([\w`"]+)',
                 upper_q
             )
+            # Преобразуем к единому списку
             flat_table_names = [t for group in table_names for t in group if t]
-            # Если таблица не train_data, запрещаем
             for t in flat_table_names:
-                # Удаляем кавычки, если есть
+                # Удаляем кавычки и проверяем имя таблицы
                 t_clean = t.replace('`', '').replace('"', '')
-                if t_clean.upper() != "TRAINDATA":
+                if t_clean.upper() != "TRAIN_DATA":
                     return False, f"Editor can only work with train_data, found: {t_clean}"
 
             return True, None
         else:
             return super().handle(role, query)
 
+
 class ViewerHandler(Handler):
     """
-    viewer — только SELECT, и только над train_data
+    viewer — только SELECT, и только над train_data.
     """
     def handle(self, role, query):
         if role == "viewer":
             upper_q = query.strip().upper()
+
+            # Проверяем, что запрос начинается с SELECT
             if not upper_q.startswith("SELECT"):
                 return False, "Viewer can only execute SELECT statements."
 
-            # Проверяем, что работаем только с train_data
+            # Извлекаем таблицы из запроса
             table_names = re.findall(
-                r'\bFROM\s+(\S+)|\bJOIN\s+(\S+)',
+                r'\bFROM\s+([\w`"]+)|\bJOIN\s+([\w`"]+)',
                 upper_q
             )
             flat_table_names = [t for group in table_names for t in group if t]
-            for t in flat_table_names:
-                t_clean = t.replace('`', '').replace('"', '')
-                if t_clean.upper() != "TRAINDATA":
-                    return False, "Viewer can only SELECT from train_data."
 
+            # Проверяем каждую таблицу
+            for t in flat_table_names:
+                # Убираем кавычки
+                t_clean = t.replace('`', '').replace('"', '')
+                if t_clean.upper() != "TRAIN_DATA":
+                    return False, f"Viewer can only SELECT from train_data, found: {t_clean}"
+
+            # Если все проверки прошли успешно
             return True, None
         else:
             return super().handle(role, query)
