@@ -92,11 +92,12 @@ def init_database():
             conn.commit()
             print("Данные успешно вставлены в таблицу 'users'.")
 
-            # Создание таблицы 2FA-кодов
+            # Создание таблицы sessions
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS sessions (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    session_id INT AUTO_INCREMENT PRIMARY KEY,
                     user_id INT NOT NULL,
+                    username VARCHAR(50) NOT NULL,
                     code VARCHAR(6) NOT NULL,
                     expires_at DATETIME NOT NULL,
                     is_validated BOOLEAN DEFAULT FALSE,
@@ -110,13 +111,15 @@ def init_database():
             # Создание таблицы logs
             cursor.execute('''
                             CREATE TABLE IF NOT EXISTS logs (
-                                id INT AUTO_INCREMENT PRIMARY KEY,
+                                log_id INT AUTO_INCREMENT PRIMARY KEY,
+                                session_id INT NOT NULL,
                                 user_id INT NOT NULL,
+                                username VARCHAR(50) NOT NULL,
                                 action VARCHAR(255) NOT NULL,
                                 details TEXT,
                                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                                 ip_address VARCHAR(45),
-                                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                                FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
                             );
                         ''')
             print("Таблица 'logs' успешно создана или уже существует.")
