@@ -173,7 +173,7 @@ class Check2FASessionHandler(Handler):
         try:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT is_session_active, session_expires_at
+                SELECT session_id, is_session_active, session_expires_at
                 FROM sessions
                 WHERE user_id = %s AND code = %s
                 ORDER BY expires_at DESC
@@ -183,11 +183,16 @@ class Check2FASessionHandler(Handler):
             if not row:
                 return {"error": "Invalid session token"}, 401
 
-            is_active, session_expires = row
+            # row = (session_id, is_active, session_expires)
+            session_id, is_active, session_expires = row
+
             if not is_active:
                 return {"error": "Session is not active"}, 401
             if datetime.now() > session_expires:
                 return {"error": "Session expired"}, 401
+
+            # Можно при желании data["session_id"] = session_id
+            # чтобы дальше логировать в logs.
 
             # Если всё ОК — переходим дальше
             return super().handle(data)
@@ -207,7 +212,10 @@ class RequestServiceHandler(Handler):
         payload = {
             "role": data.get("role"),
             "query": data.get("query"),
-            "user_id": data.get("user_id")
+            "user_id": data.get("user_id"),
+            "session_id": data.get("session_id"),
+            "username": data.get("username", "unknown")
+            # Если нужно, можно передать session_id, если его сохранили
         }
 
         try:
@@ -225,51 +233,51 @@ class RequestServiceHandler(Handler):
 def login():
     """
     Цепочка для /login:
-      1) IPCheckHandler
-      2) LoginHandler
-      3) Generate2FAHandler
-
-    Возвращает user_id, role, сообщение о генерации кода.
+    1) IPCheckHandler
+    2) LoginHandler
+    3) Generate2FAHandler
     """
-    data = request.json or {}
-    data["client_ip"] = request.remote_addr
+    try:
+        data = request.json or {}
+        data["client_ip"] = request.remote_addr
 
-    ip_handler = IPCheckHandler()
-    login_handler = LoginHandler()
-    gen_2fa_handler = Generate2FAHandler()
+        # Валидация данных
+        username = data.get("username")
+        password = data.get("password")
+        if not username or not password:
+            return jsonify({"message": "Username and password are required"}), 400
 
-    ip_handler.set_next(login_handler).set_next(gen_2fa_handler)
+        # Проверка через цепочку обработчиков
+        ip_handler = IPCheckHandler()
+        login_handler = LoginHandler()
+        gen_2fa_handler = Generate2FAHandler()
+        ip_handler.set_next(login_handler).set_next(gen_2fa_handler)
 
-    result = ip_handler.handle(data)
+        result = ip_handler.handle(data)
 
-    if isinstance(result, tuple):
-        # (body, code)
-        body, code = result
-        return jsonify(body), code
+        if isinstance(result, tuple):
+            body, code = result
+            return jsonify(body), code
 
-    if isinstance(result, dict) and "error" in result:
-        return jsonify({"message": result["error"]}), 400
+        if isinstance(result, dict) and "error" in result:
+            return jsonify({"message": result["error"]}), 400
 
-    # Успех
-    user_id = data["user_id"]
-    role = data["role"]
-    return jsonify({
-        "message": "Login successful, 2FA generated",
-        "user_id": user_id,
-        "role": role
-    }), 200
+        user_id = data["user_id"]
+        role = data["role"]
+        return jsonify({
+            "message": "Login successful, 2FA generated",
+            "user_id": user_id,
+            "role": role
+        }), 200
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"message": f"Internal Server Error: {str(e)}"}), 500
 
 
 @app.route('/validate_2fa', methods=['POST'])
 def validate_2fa():
-    """
-    Проверяет 2FA-код и включает "сессию" на N минут.
-
-    После успешной проверки:
-      - is_validated = TRUE
-      - is_session_active = TRUE
-      - session_expires_at = now() + 30 минут (пример)
-    """
     data = request.json or {}
     user_id = data.get("user_id")
     input_code = data.get("code")
@@ -277,15 +285,14 @@ def validate_2fa():
     if not user_id or not input_code:
         return jsonify({"message": "User ID and code are required"}), 400
 
-    conn = get_db_connection()
-    if not conn:
-        return jsonify({"message": "Failed to connect to DB"}), 500
-
     try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"message": "Failed to connect to DB"}), 500
+
         cursor = conn.cursor()
-        # Находим последнюю запись для user_id
         query = '''
-            SELECT id, code, expires_at, is_validated
+            SELECT session_id, code, expires_at, is_validated
             FROM sessions
             WHERE user_id = %s
             ORDER BY expires_at DESC
@@ -296,7 +303,7 @@ def validate_2fa():
         if not row:
             return jsonify({"message": "Invalid code"}), 401
 
-        record_id, db_code, db_expires, db_is_valid = row
+        session_id, db_code, db_expires, db_is_valid = row
         if db_is_valid:
             return jsonify({"message": "Code already used"}), 401
         if datetime.now() > db_expires:
@@ -304,21 +311,17 @@ def validate_2fa():
         if db_code != input_code:
             return jsonify({"message": "Invalid code"}), 401
 
-        # Настраиваем "долгую сессию" (30 минут)
         session_expires = datetime.now() + timedelta(minutes=30)
-
-        # Помечаем код как использованный, включаем сессию
         update_query = '''
             UPDATE sessions
             SET is_validated = TRUE,
                 is_session_active = TRUE,
                 session_expires_at = %s
-            WHERE id = %s
+            WHERE session_id = %s
         '''
-        cursor.execute(update_query, (session_expires, record_id))
+        cursor.execute(update_query, (session_expires, session_id))
         conn.commit()
 
-        # Считываем роль
         cursor.execute("SELECT role FROM users WHERE id = %s", (user_id,))
         role = cursor.fetchone()[0]
 
@@ -326,13 +329,20 @@ def validate_2fa():
             "message": "2FA validated",
             "user_id": user_id,
             "role": role,
+            "session_id": session_id,  # Включение session_id
             "session_expires": session_expires.isoformat()
         }), 200
-    except Error as e:
-        return jsonify({"message": f"Database error: {e}"}), 500
+
+    except Exception as e:
+        import traceback
+        print("Ошибка на сервере:")
+        print(traceback.format_exc())
+        return jsonify({"message": f"Internal Server Error: {str(e)}"}), 500
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 @app.route('/execute', methods=['POST'])
@@ -345,6 +355,10 @@ def execute_query():
     """
     data = request.json or {}
     data["client_ip"] = request.remote_addr  # Если хотим проверять IP
+
+    # Если username отсутствует в запросе, возвращаем ошибку
+    if "username" not in data:
+        return jsonify({"message": "Username is required"}), 400
 
     ip_handler = IPCheckHandler()            # Если хотим IPCheck
     session_handler = Check2FASessionHandler()

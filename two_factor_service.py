@@ -47,21 +47,25 @@ def generate_2fa():
 
     try:
         cursor = conn.cursor()
+
+        # Получение username
+        cursor.execute("SELECT username FROM users WHERE id = %s;", (user_id,))
+        username_row = cursor.fetchone()
+        if not username_row:
+            return jsonify({"message": "User not found"}), 404
+        username = username_row[0]
+
+        # Генерация 2FA-кода
         code = f"{random.randint(100000, 999999)}"
         expires_at = datetime.now() + timedelta(minutes=5)  # Код действует 5 минут
 
         # Запись кода в таблицу sessions
         insert_query = '''
-            INSERT INTO sessions (user_id, code, expires_at)
-            VALUES (%s, %s, %s);
+            INSERT INTO sessions (user_id, username, code, expires_at)
+            VALUES (%s, %s, %s, %s);
         '''
-        cursor.execute(insert_query, (user_id, code, expires_at))
+        cursor.execute(insert_query, (user_id, username, code, expires_at))
         conn.commit()
-
-        # Дополнительно можно получить телефон пользователя (если нужно отправлять SMS):
-        # cursor.execute("SELECT phone_number FROM users WHERE id = %s;", (user_id,))
-        # phone_number = cursor.fetchone()[0]
-        # send_sms(phone_number, code)  # Реализовать при необходимости
 
         return jsonify({"message": "2FA code generated", "code": code}), 200
     except Error as e:
@@ -91,51 +95,60 @@ def validate_2fa():
         cursor = conn.cursor()
         # Берём последнюю запись
         cursor.execute('''
-                SELECT id, code, expires_at, is_validated
-                FROM sessions
-                WHERE user_id = %s
-                ORDER BY expires_at DESC
-                LIMIT 1
-            ''', (user_id,))
+            SELECT id, code, expires_at, is_validated
+            FROM sessions
+            WHERE user_id = %s
+            ORDER BY expires_at DESC
+            LIMIT 1
+        ''', (user_id,))
         row = cursor.fetchone()
         if not row:
             return jsonify({"message": "Invalid code"}), 401
 
         record_id, db_code, db_expires, db_is_validated = row
 
-        # Проверка свежести
+        # Проверка: если уже использован
         if db_is_validated:
             return jsonify({"message": "Code already used"}), 401
+
+        # Проверка: если истёк
         if datetime.now() > db_expires:
             return jsonify({"message": "Code expired"}), 401
+
+        # Проверка: если неправильный
         if db_code != input_code:
             return jsonify({"message": "Invalid code"}), 401
 
-            # ОК, код подтверждён
-            session_expires = datetime.now() + timedelta(minutes=30)  # или больше
+        # ----- Если все проверки прошли, код совпал -----
 
-            update_query = '''
-                    UPDATE sessions
-                    SET is_validated = TRUE,
-                        is_session_active = TRUE,
-                        session_expires_at = %s
-                    WHERE id = %s
-                '''
-            cursor.execute(update_query, (session_expires, record_id))
-            conn.commit()
+        session_expires = datetime.now() + timedelta(minutes=30)  # или больше
 
-            # Получим роль пользователя
-            cursor.execute("SELECT role FROM users WHERE id = %s", (user_id,))
-            role = cursor.fetchone()[0]
+        update_query = '''
+            UPDATE sessions
+            SET is_validated = TRUE,
+                is_session_active = TRUE,
+                session_expires_at = %s
+            WHERE id = %s
+        '''
+        cursor.execute(update_query, (session_expires, record_id))
+        conn.commit()
 
-            return jsonify({
-                "message": "2FA validated",
-                "user_id": user_id,
-                "role": role,
-                "session_expires": session_expires.isoformat(),
-                # Клиенту можно вернуть code как "session_token"
-                "session_token": input_code
-            }), 200
+        # Получаем роль пользователя
+        cursor.execute("SELECT role FROM users WHERE id = %s", (user_id,))
+        role = cursor.fetchone()[0]
+
+        # Устанавливаем session_id как идентификатор записи
+        session_id = record_id  # Используем record_id как session_id
+
+        return jsonify({
+            "message": "2FA validated",
+            "user_id": user_id,
+            "role": role,
+            "session_id": session_id,  # Теперь session_id определён
+            "session_expires": session_expires.isoformat(),
+            "session_token": input_code
+        }), 200
+
     finally:
         cursor.close()
         conn.close()
