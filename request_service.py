@@ -62,8 +62,9 @@ class AdminHandler(Handler):
 class EditorHandler(Handler):
     """
     editor — всё, кроме:
-    - DROP TABLE, DROP DATABASE
+    - DROP TABLE, DROP DATABASE, DROP COLUMN
     - CREATE DATABASE
+    - TRUNCATE, DELETE (для всех строк)
     - и операции только над таблицей train_data
     """
     def handle(self, role, query):
@@ -74,7 +75,10 @@ class EditorHandler(Handler):
             forbidden_patterns = [
                 r"\bDROP\s+TABLE\b",
                 r"\bDROP\s+DATABASE\b",
-                r"\bCREATE\s+DATABASE\b"
+                r"\bDROP\s+COLUMN\b",
+                r"\bCREATE\s+DATABASE\b",
+                r"\bTRUNCATE\s+TABLE\b",
+                r"\bDELETE\b(?!.*WHERE)"
             ]
             for pattern in forbidden_patterns:
                 if re.search(pattern, upper_q):
