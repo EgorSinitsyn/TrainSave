@@ -11,18 +11,28 @@ EXECUTE_URL = "http://127.0.0.1:6000/execute"
 global_user_id = None
 global_role = None
 entered_2fa_code = None
+global_session_id = None
 
 def login():
     username = username_entry.get()
     password = password_entry.get()
 
     # Отправка запроса на сервер (/login)
-    response = requests.post(AUTH_URL, json={"username": username, "password": password})
+    try:
+        response = requests.post(AUTH_URL, json={"username": username, "password": password})
+        response.raise_for_status()
+    except requests.RequestException as e:
+        messagebox.showerror("Network Error", f"Failed to connect: {e}")
+        return
 
     if response.status_code == 200:
         data = response.json()
         user_id = data.get("user_id")
         role = data.get("role")
+
+        if not user_id or not role:
+            messagebox.showerror("Error", "Invalid server response: Missing user_id or role")
+            return
 
         # Сохраняем данные пользователя
         global global_user_id, global_role
@@ -39,15 +49,25 @@ def login():
         messagebox.showerror("Error", f"Unexpected error occurred! (HTTP {response.status_code})")
 
 def verify_2fa(user_id):
-    global entered_2fa_code
+    global entered_2fa_code, global_session_id
 
     code = twofa_entry.get()
     entered_2fa_code = code
 
     # Отправка запроса на сервер (/validate_2fa)
-    response = requests.post(VERIFY_2FA_URL, json={"user_id": user_id, "code": code})
+    try:
+        response = requests.post(VERIFY_2FA_URL, json={"user_id": user_id, "code": code})
+        response.raise_for_status()
+    except requests.RequestException as e:
+        messagebox.showerror("Network Error", f"Failed to connect: {e}")
+        return
 
     if response.status_code == 200:
+        data = response.json()
+        global_session_id = data.get("session_id")  # Сохраняем session_id
+        if not global_session_id:
+            messagebox.showerror("Error", "Invalid server response: Missing session_id")
+            return
         messagebox.showinfo("Success", "2FA verified successfully!")
         twofa_window.destroy()
         open_sql_window()  # Открываем окно для отправки SQL-запросов
@@ -88,7 +108,9 @@ def open_sql_window():
             return
 
         payload = {
+            "session_id": global_session_id,
             "user_id": global_user_id,
+            "username": username_entry.get(),
             "role": global_role,
             "code": entered_2fa_code,
             "query": query
@@ -96,15 +118,15 @@ def open_sql_window():
 
         try:
             resp = requests.post(EXECUTE_URL, json=payload)
-            if resp.status_code == 200:
-                data = resp.json()
-                if "result" in data:
-                    show_select_result(data["result"])
-                else:
-                    messagebox.showinfo("Info", data.get("message", "Query executed successfully"))
+            resp.raise_for_status()
+            data = resp.json()
+            if "result" in data:
+                show_select_result(data["result"])
             else:
-                err = resp.json()
-                messagebox.showerror("Error", f"HTTP {resp.status_code}: {err.get('message', resp.text)}")
+                messagebox.showinfo("Info", data.get("message", "Query executed successfully"))
+        except requests.HTTPError as e:
+            err = resp.json()
+            messagebox.showerror("Error", f"HTTP {resp.status_code}: {err.get('message', resp.text)}")
         except requests.RequestException as e:
             messagebox.showerror("Network Error", str(e))
 
