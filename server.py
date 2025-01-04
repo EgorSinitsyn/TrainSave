@@ -151,7 +151,7 @@ class Generate2FAHandler(Handler):
 class Check2FASessionHandler(Handler):
     """
     Проверяет, есть ли у пользователя «активная 2FA-сессия»
-    в таблице two_factor_codes.
+    в таблице sessions.
 
     Ожидаем, что клиент передаёт: user_id, code (который вернулся ему после
     валидации). is_session_active = TRUE, session_expires_at > now().
@@ -174,7 +174,7 @@ class Check2FASessionHandler(Handler):
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT is_session_active, session_expires_at
-                FROM two_factor_codes
+                FROM sessions
                 WHERE user_id = %s AND code = %s
                 ORDER BY expires_at DESC
                 LIMIT 1
@@ -286,7 +286,7 @@ def validate_2fa():
         # Находим последнюю запись для user_id
         query = '''
             SELECT id, code, expires_at, is_validated
-            FROM two_factor_codes
+            FROM sessions
             WHERE user_id = %s
             ORDER BY expires_at DESC
             LIMIT 1
@@ -309,7 +309,7 @@ def validate_2fa():
 
         # Помечаем код как использованный, включаем сессию
         update_query = '''
-            UPDATE two_factor_codes
+            UPDATE sessions
             SET is_validated = TRUE,
                 is_session_active = TRUE,
                 session_expires_at = %s

@@ -50,9 +50,9 @@ def generate_2fa():
         code = f"{random.randint(100000, 999999)}"
         expires_at = datetime.now() + timedelta(minutes=5)  # Код действует 5 минут
 
-        # Запись кода в таблицу two_factor_codes
+        # Запись кода в таблицу sessions
         insert_query = '''
-            INSERT INTO two_factor_codes (user_id, code, expires_at)
+            INSERT INTO sessions (user_id, code, expires_at)
             VALUES (%s, %s, %s);
         '''
         cursor.execute(insert_query, (user_id, code, expires_at))
@@ -92,7 +92,7 @@ def validate_2fa():
         # Берём последнюю запись
         cursor.execute('''
                 SELECT id, code, expires_at, is_validated
-                FROM two_factor_codes
+                FROM sessions
                 WHERE user_id = %s
                 ORDER BY expires_at DESC
                 LIMIT 1
@@ -115,7 +115,7 @@ def validate_2fa():
             session_expires = datetime.now() + timedelta(minutes=30)  # или больше
 
             update_query = '''
-                    UPDATE two_factor_codes
+                    UPDATE sessions
                     SET is_validated = TRUE,
                         is_session_active = TRUE,
                         session_expires_at = %s
