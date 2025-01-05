@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  server:
+    image: server_module
+    build:
+      context: ./server
+    ports:
+      - "${SERVER_PORT}:6000"
+    env_file:
+      - ./server/.env
+    networks:
+      - app_network
+
+  request_service:
+    image: request_service_module
+    build:
+      context: ./request_service
+    ports:
+      - "${REQUEST_SERVICE_PORT}:6002"
+    env_file:
+      - ./request_service/.env
+    networks:
+      - app_network
+
+  two_factor_service:
+    image: two_factor_service_module
+    build:
+      context: ./two_factor_service
+    ports:
+      - "${TWO_FACTOR_SERVICE_PORT}:6001"
+    env_file:
+      - ./two_factor_service/.env
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
