@@ -23,20 +23,23 @@ DB_CONFIG = {
 # Разрешённые IP-адреса/подсети
 ALLOWED_IP_RANGES = [
     "127.0.0.1",
+    "10.128.0.0/24",           # Подсеть VPC
+    "79.139.0.0/16",           # Московский диапазон Ip-адресов для внешних подключений
+    "84.17.0.0/16",            # Польша
     "158.160.37.33",           # Внешний IP сервера
     "158.160.33.170",          # Внешний IP сервера-БД
-    "10.128.0.0/24",           # Подсеть VPC
-    "79.139.144.0/21",         # Московский диапазон Ip-адресов для внешних подключений
-    "172.21.0.0/16"            # Docker-сеть (для контейнеров)
+    "172.0.0.0/8",             # Docker-сеть (для контейнеров)
+    "192.168.0.0/16",          # Локальная сеть
+    "198.18.0.0/15"            # VPN или тестовая сеть
 ]
 
 # URLs микросервисов локальные
-TWO_FACTOR_SERVICE_URL = "http://127.0.0.1:6001"
-REQUEST_SERVICE_URL = "http://127.0.0.1:6002"
+# TWO_FACTOR_SERVICE_URL = "http://127.0.0.1:6001"
+# REQUEST_SERVICE_URL = "http://127.0.0.1:6002"
 
 # Имена микросервисов внутри одной Docker-сети на изолированной WM в Yandex_cloud
-# TWO_FACTOR_SERVICE_URL = "http://two_factor_service:6001"
-# REQUEST_SERVICE_URL = "http://request_service:6002"
+TWO_FACTOR_SERVICE_URL = "http://two_factor_service:6001"
+REQUEST_SERVICE_URL = "http://request_service:6002"
 
 app = Flask(__name__)
 
@@ -60,10 +63,21 @@ def is_ip_allowed(ip):
     """
     Проверяем, находится ли IP в списке/подсети ALLOWED_IP_RANGES.
     """
+
+    # """
+    # Временно отключена проверка IP.
+    # """
+    # return True
+
+    print(f"Received IP for checking: {ip}")
     for allowed_range in ALLOWED_IP_RANGES:
+        print(f"Testing against range: {allowed_range}")
         if ipaddress.ip_address(ip) in ipaddress.ip_network(allowed_range):
+            print(f"IP {ip} is allowed")
             return True
+    print(f"IP {ip} is not allowed")
     return False
+
 
 
 # =============================================================================
