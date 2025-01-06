@@ -2,21 +2,21 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext
 import requests
 
-# Локальные URL сервисов
+# Переменные сервисов, развернутые локально и в локальном Docker-compose
 AUTH_URL = "http://127.0.0.1:6000/login"
 VERIFY_2FA_URL = "http://127.0.0.1:6000/validate_2fa"
 EXECUTE_URL = "http://127.0.0.1:6000/execute"
-
-# Переменные сервисов, развернутые локально в Docker-compose
-# AUTH_URL = "http://127.0.0.1:6000/login"
-# VERIFY_2FA_URL = "http://127.0.0.1:6000/validate_2fa"
-# EXECUTE_URL = "http://127.0.0.1:6000/execute"
 
 # Глобальные переменные для хранения данных пользователя
 global_user_id = None
 global_role = None
 entered_2fa_code = None
 global_session_id = None
+
+
+# =============================================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# =============================================================================
 
 def login():
     username = username_entry.get()
@@ -153,6 +153,11 @@ def open_sql_window():
     execute_button.pack(pady=5)
 
     sql_window.focus()
+
+
+# =============================================================================
+# ИНТЕРФЕЙС ПРИЛОЖЕНИЯ
+# =============================================================================
 
 # Создание основного окна приложения
 root = tk.Tk()
