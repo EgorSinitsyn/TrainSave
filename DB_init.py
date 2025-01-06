@@ -84,9 +84,9 @@ def init_database():
             insert_query = '''
                 INSERT INTO users (username, password, role, phone_number) 
                 VALUES 
-                ('admin_user', 'adminpass', 'admin', '9637855010'),
-                ('editor_user', 'editorpass', 'editor', '9637855010'),
-                ('viewer_user', 'viewerpass', 'viewer', '9637855010');
+                ('admin_user', 'adminpass', 'admin', '88005553535'),
+                ('editor_user', 'editorpass', 'editor', '88005553535'),
+                ('viewer_user', 'viewerpass', 'viewer', '88005553535');
             '''
             cursor.execute(insert_query)
             conn.commit()
