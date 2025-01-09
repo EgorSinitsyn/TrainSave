@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: two-factor-service-deployment
+  labels:
+    app: two-factor-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: two-factor-service
+  template:
+    metadata:
+      labels:
+        app: two-factor-service
+    spec:
+      containers:
+        - name: two-factor-service
+          image: two_factor_service_module:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 6001
+          envFrom:
+            - configMapRef:
+                name: app-config

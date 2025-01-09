@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: request-service-deployment
+  labels:
+    app: request-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: request-service
+  template:
+    metadata:
+      labels:
+        app: request-service
+    spec:
+      containers:
+        - name: request-service
+          image: request_service_module:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 6002
+          envFrom:
+            - configMapRef:
+                name: app-config
