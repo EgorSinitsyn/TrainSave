@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  DB_HOST: 158.160.33.170
+  DB_PORT: "3306"
+  DB_USER: remote_user_egor
+  DB_PASSWORD: QqSsWwTt223445!
+  DB_NAME: TrainSafe
+  SERVER_PORT: "6000"
+  REQUEST_SERVICE_PORT: "6002"
+  TWO_FACTOR_SERVICE_PORT: "6001"
