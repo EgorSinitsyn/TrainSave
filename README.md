@@ -22,3 +22,60 @@ docker build -t two_factor_service_module ./two_factor_service
 ```bash
 docker-compose up --build
 ```
+
+### Применение манифестов Kubernetes
+1. Старт Minikube
+```bash
+minikube start --cpus=4 --memory=5192
+```
+2. Проверяем запуск кластера
+```bash
+kubectl cluster-info
+```
+3. Применение ConfigMap
+```bash
+kubectl apply -f app-config.yaml
+```
+4. Применение деплойментов
+```bash
+kubectl apply -f ./server/server-deployment.yaml
+kubectl apply -f ./request_service/request-service-deployment.yaml
+kubectl apply -f ./two_factor_service/two-factor-service-deployment.yaml
+```
+5. Применение сервисов
+```bash
+kubectl apply -f ./server/server-service.yaml
+kubectl apply -f ./request_service/request-service-service.yaml
+kubectl apply -f ./two_factor_service/two-factor-service-service.yaml
+```
+6. Связываем локальный Docker с Minikube
+```bash
+eval $(minikube docker-env)
+```
+7. Создаем образы (обязательно выполнить пред команду)
+```bash
+docker build -t server_module ./server
+docker build -t request_service_module ./request_service
+docker build -t two_factor_service_module ./two_factor_service
+```
+8. Они обязательно должны отобразиться в Minikube
+```bash
+eval $(minikube docker-env)
+docker images
+```
+9. Стягиваем образы в Minikube
+```bash
+minikube image load server_module:latest                                              
+minikube image load request_service_module:latest
+minikube image load two_factor_service_module:latest
+```
+10. Проверяем статус подов (должно быть running) и сервисов
+```bash
+kubectl get pods
+kubectl get svc
+```
+11. Проброс локального хоста в Minikube
+```bash
+kubectl port-forward service/server-service 6000:6000
+```
+12. Делаем запросы на localhost:6000
