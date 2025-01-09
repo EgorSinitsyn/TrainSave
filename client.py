@@ -2,15 +2,15 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext
 import requests
 
-# Переменные сервисов, развернутые локально и в локальном Docker-compose
-# AUTH_URL = "http://127.0.0.1:6000/login"
-# VERIFY_2FA_URL = "http://127.0.0.1:6000/validate_2fa"
-# EXECUTE_URL = "http://127.0.0.1:6000/execute"
+# Переменные сервисов, развернутые локально, в Docker-compose и Minikube
+AUTH_URL = "http://127.0.0.1:6000/login"
+VERIFY_2FA_URL = "http://127.0.0.1:6000/validate_2fa"
+EXECUTE_URL = "http://127.0.0.1:6000/execute"
 
-# Переменные сервисов, развернутые на удаленной виртуальной машине YC в Docker-compose
-AUTH_URL = "http://158.160.37.33:6000/login"
-VERIFY_2FA_URL = "http://158.160.37.33:6000/validate_2fa"
-EXECUTE_URL = "http://158.160.37.33:6000/execute"
+# # Переменные сервисов, развернутые на удаленной виртуальной машине YC в Docker-compose
+# AUTH_URL = "http://158.160.37.33:6000/login"
+# VERIFY_2FA_URL = "http://158.160.37.33:6000/validate_2fa"
+# EXECUTE_URL = "http://158.160.37.33:6000/execute"
 
 # Глобальные переменные для хранения данных пользователя
 global_user_id = None
