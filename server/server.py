@@ -24,6 +24,8 @@ DB_CONFIG = {
 ALLOWED_IP_RANGES = [
     "127.0.0.1",
     "10.128.0.0/24",           # Подсеть VPC
+    "10.0.0.0/8",              # Включает внутренние IP Kubernetes
+    "192.168.49.0/24",         # Minikube сеть
     "79.139.0.0/16",           # Московский диапазон Ip-адресов для внешних подключений
     "84.17.0.0/16",            # Польша
     "158.160.37.33",           # Внешний IP сервера
@@ -38,8 +40,12 @@ ALLOWED_IP_RANGES = [
 # REQUEST_SERVICE_URL = "http://127.0.0.1:6002"
 
 # Имена микросервисов внутри одной Docker-сети на изолированной WM в Yandex_cloud
-TWO_FACTOR_SERVICE_URL = "http://two_factor_service:6001"
-REQUEST_SERVICE_URL = "http://request_service:6002"
+# TWO_FACTOR_SERVICE_URL = "http://two_factor_service:6001"
+# REQUEST_SERVICE_URL = "http://request_service:6002"
+
+# URLs микросервисов в Minikube
+TWO_FACTOR_SERVICE_URL = "http://two-factor-service-service:6001"
+REQUEST_SERVICE_URL = "http://request-service-service:6002"
 
 app = Flask(__name__)
 
