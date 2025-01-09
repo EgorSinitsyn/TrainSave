@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: two-factor-service-service
+spec:
+  selector:
+    app: two-factor-service
+  ports:
+    - protocol: TCP
+      port: 6001
+      targetPort: 6001
+      nodePort: 30001     # Порт на узле
+  type: NodePort

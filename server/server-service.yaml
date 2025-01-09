@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-service
+spec:
+  selector:
+    app: server
+  ports:
+    - protocol: TCP
+      port: 6000          # Внешний порт (NodePort)
+      targetPort: 6000    # Порт в Pod-е
+      nodePort: 30000     # Порт на узле
+  type: NodePort
