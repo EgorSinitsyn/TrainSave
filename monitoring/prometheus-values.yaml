@@ -1,0 +1,24 @@
+nodeExporter:
+  enabled: true
+  service:
+    port: 9100
+
+serverFiles:
+  prometheus.yml:
+#    global:
+#      evaluation_interval: 1m
+#      scrape_interval: 1m
+#      scrape_timeout: 10s
+    scrape_configs:
+    - job_name: prometheus
+      static_configs:
+      - targets:
+        - localhost:9090
+    - job_name: 'cadvisor'
+      static_configs:
+      - targets:
+        - cadvisor.default.svc.cluster.local:8080
+    - job_name: 'node-exporter'
+      static_configs:
+      - targets:
+        - 'prometheus-prometheus-node-exporter.monitoring.svc.cluster.local:9100'
