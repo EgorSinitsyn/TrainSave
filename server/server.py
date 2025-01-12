@@ -36,16 +36,16 @@ ALLOWED_IP_RANGES = [
 ]
 
 # URLs микросервисов локальные
-# TWO_FACTOR_SERVICE_URL = "http://127.0.0.1:6001"
-# REQUEST_SERVICE_URL = "http://127.0.0.1:6002"
+TWO_FACTOR_SERVICE_URL = "http://127.0.0.1:6001"
+REQUEST_SERVICE_URL = "http://127.0.0.1:6002"
 
 # Имена микросервисов внутри одной Docker-сети на изолированной WM в Yandex_cloud
 # TWO_FACTOR_SERVICE_URL = "http://two_factor_service:6001"
 # REQUEST_SERVICE_URL = "http://request_service:6002"
 
 # URLs микросервисов в Minikube
-TWO_FACTOR_SERVICE_URL = "http://two-factor-service-service:6001"
-REQUEST_SERVICE_URL = "http://request-service-service:6002"
+# TWO_FACTOR_SERVICE_URL = "http://two-factor-service-service:6001"
+# REQUEST_SERVICE_URL = "http://request-service-service:6002"
 
 app = Flask(__name__)
 
@@ -173,8 +173,68 @@ class Generate2FAHandler(Handler):
 
 
 # -----------------------------------------------------------------------------
-# Handler для /execute - вариант с проверкой «активной 2FA-сессии»
+# Handler для проверки 2FA по коду (вызывается микросервис)
 # -----------------------------------------------------------------------------
+
+class Validate2FAHandler(Handler):
+    """
+    Делегирует проверку 2FA (код и user_id) на two_factor_service (/validate_2fa).
+    Ожидается, что data содержит поля 'user_id' и 'code'.
+    """
+    def handle(self, data):
+        user_id = data.get("user_id")
+        input_code = data.get("code")
+
+        if not user_id or not input_code:
+            return {"error": "User ID and code are required"}, 400
+
+        # Отправляем запрос к two_factor_service
+        try:
+            print(f"[DEBUG] Отправляем запрос в two_factor_service: user_id={user_id}, code={input_code}")
+            resp = requests.post(
+                f"{TWO_FACTOR_SERVICE_URL}/validate_2fa",
+                json={"user_id": user_id, "code": input_code}
+            )
+            resp.raise_for_status()  # Проверяем HTTP статус
+        except requests.RequestException as e:
+            print(f"[ERROR] Ошибка при вызове two_factor_service: {e}")
+            return {"error": f"Failed to call two_factor_service: {e}"}, 500
+
+        if resp.status_code == 200:
+            # 2FA прошла успешно
+            try:
+                resp_data = resp.json()
+                print(f"[DEBUG] Ответ от two_factor_service: {resp_data}")
+
+                # Проверяем наличие session_id
+                if "session_id" not in resp_data:
+                    print("[ERROR] Отсутствует session_id в ответе от two_factor_service")
+                    return {"error": "Missing session_id in response"}, 500
+
+                # Добавляем данные в `data`
+                data["session_id"] = resp_data.get("session_id")
+                data["role"] = resp_data.get("role", data.get("role"))  # возможно обновить
+                print(f"[DEBUG] Данные после добавления session_id: {data}")
+                return super().handle(data)
+
+            except ValueError as e:
+                print(f"[ERROR] Ошибка обработки JSON-ответа от two_factor_service: {e}")
+                return {"error": "Invalid JSON response from two_factor_service"}, 500
+
+        else:
+            # Обработка ошибки от two_factor_service
+            try:
+                err_data = resp.json()
+                print(f"[ERROR] Ошибка от two_factor_service: {err_data}")
+            except ValueError:
+                err_data = {"message": "Unknown error from two_factor_service"}
+                print(f"[ERROR] Некорректный ответ от two_factor_service")
+            return {"error": err_data.get("message", "Invalid 2FA")}, resp.status_code
+
+
+# ------------------------------------------------------------------------------------------
+# Handler для /execute - вариант с проверкой «активной 2FA-сессии» (обращение к микросервису)
+# -------------------------------------------------------------------------------------------
 
 class Check2FASessionHandler(Handler):
     """
@@ -306,99 +366,62 @@ def login():
 
 @app.route('/validate_2fa', methods=['POST'])
 def validate_2fa():
+    """
+    Делегирует проверку кода 2FA в two_factor_service.
+    """
     data = request.json or {}
-    user_id = data.get("user_id")
-    input_code = data.get("code")
+    validate_handler = Validate2FAHandler()  # Используем Validate2FAHandler
 
-    if not user_id or not input_code:
-        return jsonify({"message": "User ID and code are required"}), 400
+    # Передача данных обработчику
+    result = validate_handler.handle(data)
 
-    try:
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({"message": "Failed to connect to DB"}), 500
-
-        cursor = conn.cursor()
-        query = '''
-            SELECT session_id, code, expires_at, is_validated
-            FROM sessions
-            WHERE user_id = %s
-            ORDER BY expires_at DESC
-            LIMIT 1
-        '''
-        cursor.execute(query, (user_id,))
-        row = cursor.fetchone()
-        if not row:
-            return jsonify({"message": "Invalid code"}), 401
-
-        session_id, db_code, db_expires, db_is_valid = row
-        if db_is_valid:
-            return jsonify({"message": "Code already used"}), 401
-        if datetime.now() > db_expires:
-            return jsonify({"message": "Code expired"}), 401
-        if db_code != input_code:
-            return jsonify({"message": "Invalid code"}), 401
-
-        session_expires = datetime.now() + timedelta(minutes=30)
-        update_query = '''
-            UPDATE sessions
-            SET is_validated = TRUE,
-                is_session_active = TRUE,
-                session_expires_at = %s
-            WHERE session_id = %s
-        '''
-        cursor.execute(update_query, (session_expires, session_id))
-        conn.commit()
-
-        cursor.execute("SELECT role FROM users WHERE id = %s", (user_id,))
-        role = cursor.fetchone()[0]
-
-        return jsonify({
-            "message": "2FA validated",
-            "user_id": user_id,
-            "role": role,
-            "session_id": session_id,  # Включение session_id
-            "session_expires": session_expires.isoformat()
-        }), 200
-
-    except Exception as e:
-        import traceback
-        print("Ошибка на сервере:")
-        print(traceback.format_exc())
-        return jsonify({"message": f"Internal Server Error: {str(e)}"}), 500
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+    # Обработка результата
+    if isinstance(result, tuple):
+        body, code = result
+        return jsonify(body), code
+    elif isinstance(result, dict) and "error" in result:
+        return jsonify({"message": result["error"]}), 400
+    elif isinstance(result, dict):
+        # Если всё прошло хорошо и в result есть сгенерированный session_id,
+        # просто возвращаем его вместе со всеми полями:
+        return jsonify(result), 200
+    return jsonify({"message": "2FA validation successful"}), 200
 
 
 @app.route('/execute', methods=['POST'])
 def execute_query():
     """
-    Цепочка для /execute:
-      1) IPCheckHandler (опционально, если тоже хотим проверить IP)
-      2) Check2FASessionHandler (проверяем, что есть активная 2FA-сессия)
-      3) RequestServiceHandler (делегируем SQL-запрос)
+    Пример цепочки для /execute:
+    1) IPCheckHandle
+    2) Validate2FAHandler (если вы ожидаете, что пользователь только что ввёл 2FA)
+    3) Check2FASessionHandler (если пользователь уже ввёл код ранее, и у него есть активная сессия)
+    4) RequestServiceHandler (делегируем в request_service)
     """
     data = request.json or {}
-    data["client_ip"] = request.remote_addr  # Если хотим проверять IP
+    data["client_ip"] = request.remote_addr
 
-    # Если username отсутствует в запросе, возвращаем ошибку
+    # Если username отсутствует, возвращаем ошибку
     if "username" not in data:
         return jsonify({"message": "Username is required"}), 400
 
-    ip_handler = IPCheckHandler()            # Если хотим IPCheck
+    ip_handler = IPCheckHandler()
+
+    # Если нужно проверять «живой» код 2FA, используем Validate2FAHandler:
+    # validate_2fa_handler = Validate2FAHandler()
+
+    # Если нужно проверять «активную» сессию, используем Check2FASessionHandler:
     session_handler = Check2FASessionHandler()
+
     request_service = RequestServiceHandler()
 
-    # Связываем
-    # Если IPCheck не нужен, начинаем цепочку с session_handler
+    # Пример: сначала IP → потом уже активная сессия (Check2FASessionHandler):
     ip_handler.set_next(session_handler).set_next(request_service)
+
+    # Если бы нужен Validate2FAHandler, делаем так:
+    # ip_handler.set_next(validate_2fa_handler).set_next(request_service)
 
     result = ip_handler.handle(data)
 
-    # Обработка возврата
     if isinstance(result, tuple):
         if len(result) == 2:
             body, code = result
@@ -411,6 +434,7 @@ def execute_query():
         return jsonify({"message": result["error"]}), 400
 
     return jsonify({"message": "Unexpected error"}), 500
+
 
 
 if __name__ == "__main__":
