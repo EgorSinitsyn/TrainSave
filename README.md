@@ -160,4 +160,29 @@ kubectl get svc
 ```bash
 kubectl port-forward service/server-service 6000:6000
 ```
-12. Делаем запросы через клиентское приложение на localhost:6000
+12. Устанавливаем Helm, Grafana и Prometheus
+13. Применяем манифест cadvisor
+```bash
+kubectl apply -f ./monitoring/cadvisor-deployment.yaml
+```
+14. Применяем манифест prometheus
+```bash
+helm upgrade prometheus prometheus-community/prometheus -n monitoring -f monitoring/prometheus-values.yaml
+```
+15. Получаем пароль от Grafana
+```bash
+kubectl get secret -n monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode
+```
+16. Порт-форвард для prometheus и grafana
+```bash
+kubectl port-forward -n monitoring svc/prometheus-server 9090:80
+kubectl port-forward -n monitoring svc/grafana 3000:80
+```
+17. Заходим на дашборды Prometheus и Grafana через localhost:9090 и localhost:3000 соответственно
+18. В дашборде Prometheus все поды должны быть в статусе UP
+19. В дашборде Grafana добавляем источник данных Prometheus (Connections -> Add data source)
+20. Импортируем дашборды и мониторим кластер
+21. Запускаем клиентское приложение и взаимодействуем через localhost:6000
+```bash
+python client.py
+```
